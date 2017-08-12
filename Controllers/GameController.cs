@@ -34,12 +34,14 @@ namespace jeoreact
 
         [HttpPost]
         [RouteAttribute("api/game/new")]
-        public void Post([FromBody]Game game)
+        public int Post([FromBody]Game game)
         {
             logger.LogTrace("ODM: " + game.PlayedOn + ' ' + game.Scores.First().Player);
 
             db.Games.Add(game);
-            db.SaveChanges();  
+            db.SaveChanges(); 
+
+            return game.Id;
         }
 
         [HttpGet]

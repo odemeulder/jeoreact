@@ -7,10 +7,6 @@ interface Player {
     score: number;
 }
 
-interface IGamePlayersState {
-    players: Player[];
-}
-
 interface IPlayerProps {
     player: Player,
     incrementScore: Function,
@@ -56,19 +52,18 @@ interface ApiPlayer {
     name: string;
 }
 
-export class JeoScoreBoard extends React.Component<{},IGamePlayersState> {
+interface JeoScoreBoardProps {
+    players: Player[],
+    incrementScore: Function,
+    decrementScore: Function,
+    resetScores: Function,
+    saveScores: Function
+}
+
+export class JeoScoreBoard extends React.Component<JeoScoreBoardProps,{}> {
 
     constructor() {
         super();
-        this.state = {'players' : []}
-    }
-
-    public componentDidMount() {
-        fetch('/api/players')
-            .then(response => response.json() as Promise<ApiPlayer[]>)
-            .then(data => {
-                this.setState({ players: data.map(p => ({ 'id': p.id, 'name': p.name, 'score': 0 })) });
-            });
     }
 
     public render() {
@@ -76,73 +71,31 @@ export class JeoScoreBoard extends React.Component<{},IGamePlayersState> {
         <div>
             <h2>Current Game</h2>
             <div className="score-display-grid">
-                {this.state.players.map((p) => 
+                {this.props.players.map((p) => 
                     <JeoPlayerDisplay 
                         player={p} 
                         key={p.id}
-                        incrementScore={() => this.incrementScore(p.id)} 
-                        decrementScore={() => this.decrementScore(p.id)} />
+                        incrementScore={() => this.props.incrementScore(p.id)} 
+                        decrementScore={() => this.props.decrementScore(p.id)} />
                 )}
             </div>
             <div className="score-buttons" >
-                <button onClick={this.resetScores}>Reset Scores</button>
-                <button onClick={this.saveScores}>Save Scores</button>
+                <button onClick={() => this.props.resetScores()}>Reset Scores</button>
+                <button onClick={() => this.props.saveScores()}>Save Scores</button>
             </div>
 
         </div>)
     }
-
-    private incrementScore(id: number) {
-        this.setState({players: this.state.players.map(p => {
-            if (p.id === id) p.score++;
-            return p;
-        })})
-    }
-
-    private decrementScore(id: number) {
-        this.setState({players: this.state.players.map(p => {
-            if (p.id === id && p.score > 0) p.score--;
-            return p;
-        })})
-    }
-
-    private saveScores = () => {
-        let game: ApiGame = { 
-            'playedOn': moment().format('YYYY-MM-DD')
-            , 'scores': this.state.players.map(s => ({playerId: s.id, score: s.score}))
-        };
-        this.saveScoresToDb(game);
-    }
-
-    private resetScores = () => {
-        this.setState({players: this.state.players.map(p => { p.score = 0; return p; })});
-    }
-
-    private saveScoresToDb = (game: ApiGame) => {
-        fetch('/api/game/new',{
-            method: "post",
-            body: JSON.stringify(game),
-            headers: new Headers({'Content-Type': 'application/json'})
-	    });
-
-        this.resetScores();
-    }
-}
-
-interface IGameScoreProps {
-    scoreLine: ScoreRecord
 }
 
 interface ScoreRecord {
+    Id: number,
     GameDate: String;
     Scores: String;
 }
 
-interface IGameHistoryState {
-    games: ScoreRecord[]
-}
-
 interface ApiGame {
+    id?: number;
     playedOn: string;
     scores: ApiScore[]
 }
@@ -152,31 +105,20 @@ interface ApiScore {
     player?: Player;
 }
 
+interface JeoScoreHistoryProps {
+    games: ScoreRecord[]
+}
 
-export class JeoScoreHistory extends React.Component<{},IGameHistoryState> {
+
+export class JeoScoreHistory extends React.Component<JeoScoreHistoryProps,{}> {
 
     constructor() {
         super();
-        this.state = {games : []};
-    }
-
-    public componentDidMount() {
-        fetch('/api/games')
-            .then(response => response.json() as Promise<ApiGame[]>)
-            .then(data => {
-                console.log(games);
-                var games = data.map(game => {
-                    let scores: string = game.scores.map(gs => gs.player.name + ' (' + gs.score + ') ' ).join(',');
-                    let sr: ScoreRecord = { 'GameDate': moment(game.playedOn.toString()).format('L'), 'Scores': scores};
-                    return sr;
-                });
-                this.setState({'games': games});
-            });
     }
     
     private GetScoreLine(scoreLine: ScoreRecord) {
         return  (           
-            <tr>
+            <tr key={scoreLine.Id}>
                 <td>{scoreLine.GameDate}</td>
                 <td>{scoreLine.Scores}</td>
             </tr>
@@ -184,7 +126,7 @@ export class JeoScoreHistory extends React.Component<{},IGameHistoryState> {
     }
 
     private GetGameScores() {
-        return <tbody>{this.state.games.map(g => this.GetScoreLine(g))}</tbody>
+        return <tbody>{this.props.games.map(g => this.GetScoreLine(g))}</tbody>
     }
     
     public render () {
@@ -205,15 +147,99 @@ export class JeoScoreHistory extends React.Component<{},IGameHistoryState> {
     }
 }
 
+interface JeopardyState {
+    games: ScoreRecord[],
+    players: Player[]
+}
 
-export class Jeopardy extends React.Component<{}, {}> {
+export class Jeopardy extends React.Component<{}, JeopardyState> {
+
+    constructor() {
+        super();
+        this.state = { games: [], players: []};
+    }
+
+    public componentDidMount() {
+        fetch('/api/players')
+            .then(response => response.json() as Promise<ApiPlayer[]>)
+            .then(data => {
+                this.setState({ 'games': this.state.games
+                    , 'players': data.map(p => ({ 'id': p.id, 'name': p.name, 'score': 0 })) });
+            });
+        fetch('/api/games')
+            .then(response => response.json() as Promise<ApiGame[]>)
+            .then(data => {
+                var games = data.map(this.mapGameToScoreResults);
+                this.setState({'games': games, 'players': this.state.players });
+            });
+    }
+
+    private mapGameToScoreResults = (game: ApiGame):ScoreRecord => {
+        return {  'GameDate': moment(game.playedOn.toString()).format('L')
+            , 'Scores': this.formatScoreResults(game.scores)
+            , 'Id': game.id};
+    }
+
+    private formatScoreResults = (scores: ApiScore[]):string => {
+        return scores.map(gs => gs.player.name + ' (' + gs.score + ') ' ).join(',');
+    }
+
+    private incrementScore = (id: number) => {
+        this.setState({players: this.state.players.map(p => {
+            if (p.id === id) p.score++;
+            return p;
+        })})
+    }
+
+    private decrementScore = (id: number) => {
+        this.setState({players: this.state.players.map(p => {
+            if (p.id === id && p.score > 0) p.score--;
+            return p;
+        })})
+    }
+
+    private saveScores = () => {
+        let game: ApiGame = { 
+            'playedOn': moment().format('YYYY-MM-DD')
+            , 'scores': this.state.players.map(s => ({playerId: s.id, score: s.score}))
+        };
+        this.saveScoresToDb(game)
+            .then((gameId) => {
+                game.id = gameId;
+                game.scores.map((s => { 
+                    s.player = this.state.players.filter(p => p.id == s.playerId)[0];
+                    return s;
+                }))
+                this.state.games.push(this.mapGameToScoreResults(game));
+                this.resetScores();
+            });
+    }
+
+    private resetScores = () => {
+        this.setState({players: this.state.players.map(p => { p.score = 0; return p; })});
+    }
+
+    private saveScoresToDb = (game: ApiGame) => {
+        return fetch('/api/game/new',{
+            method: "post",
+            body: JSON.stringify(game),
+            headers: new Headers({'Content-Type': 'application/json'})
+	    })
+        .then(response => response.json() as Promise<number>);
+    }
 
     public render () {
         return (
         <div>
             <h1>Olivier Jeopardy</h1>
-            <JeoScoreBoard />
-            <JeoScoreHistory />
+            <JeoScoreBoard 
+                players={this.state.players}
+                incrementScore={this.incrementScore}
+                decrementScore={this.decrementScore}
+                saveScores={this.saveScores}
+                resetScores={this.resetScores}
+            />
+            <JeoScoreHistory games={this.state.games} />
         </div>)
     }
 

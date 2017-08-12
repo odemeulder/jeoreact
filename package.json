@@ -29,6 +29,7 @@
     "webpack-hot-middleware": "2.18.0"
   },
   "dependencies": {
-    "moment": "^2.18.1"
+    "moment": "^2.18.1",
+    "redux": "^3.6.0"
   }
 }
